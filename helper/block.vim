@@ -5,7 +5,7 @@
 " Commands:
 "
 "   :Cb    Comment the block containing the current cursor
-"   :Ub    Uncomment the block containing the current cursor
+"   :Ub    Uncomment the commented block containing the current cursor
 "
 " Block detection is based on the current filetype.
 "
@@ -88,10 +88,7 @@ endfunction
 " Finds the block containing the current cursor and comments
 " the entire block.
 "
-" For line-comment languages, the entire block is commented
-" line by line.
-"
-" For C-style languages, /* and */ are placed around the block.
+" This uses the original block detector.
 " ============================================================
 
 command! Cb call CommentBlock()
@@ -119,17 +116,24 @@ endfunction
 "
 " :Ub
 "
-" Finds the block containing the current cursor and reverses
-" the operation performed by Cb.
+" IMPORTANT:
+"
+" Ub does NOT use FindBlock().
+"
+" Once Cb has commented a block, the original programming
+" language structure may no longer be visible to the block
+" detector.
+"
+" Therefore Ub has its own commented-block detector.
 " ============================================================
 
 command! Ub call UncommentBlock()
 
 function! UncommentBlock() abort
-  let range = FindBlock()
+  let range = FindCommentedBlock()
 
   if empty(range)
-    echoerr 'Unable to determine block at current cursor position.'
+    echoerr 'Unable to determine commented block at current cursor position.'
     return
   endif
 
@@ -146,19 +150,12 @@ endfunction
 " ============================================================
 " FIND BLOCK
 "
-" Attempts to determine the logical block containing the
-" current cursor.
+" Used by Cb.
 "
-" The implementation deliberately remains independent from
-" function.vim.
+" This is deliberately independent from function.vim.
 "
-" This is important:
-"
-"   Cb / Ub = block operations
-"   Cf / Uf = function operations
-"
-" They may use similar detection logic, but changing one
-" should not break the other.
+" Cb / Ub = block operations
+" Cf / Uf = function operations
 " ============================================================
 
 function! FindBlock() abort
@@ -166,8 +163,6 @@ function! FindBlock() abort
 
   " ----------------------------------------------------------
   " Python
-  "
-  " Python blocks are indentation based.
   " ----------------------------------------------------------
 
   if ft ==# 'python'
@@ -246,39 +241,197 @@ endfunction
 
 
 " ============================================================
+" FIND COMMENTED BLOCK
+"
+" Used exclusively by Ub.
+"
+" This function deliberately does NOT try to understand the
+" programming-language structure.
+"
+" It looks for the comment structure produced by Cb.
+" ============================================================
+
+function! FindCommentedBlock() abort
+  let style = BlockCommentStyle()
+
+  if style[1] ==# 'line'
+    return FindLineCommentedBlock(style[0])
+  endif
+
+  return FindCStyleCommentedBlock()
+endfunction
+
+
+" ============================================================
+" FIND LINE-COMMENTED BLOCK
+"
+" Used for:
+"
+"   #
+"   "
+"
+" style comments.
+"
+" Example:
+"
+"   # line one
+"   # line two
+"   # line three
+"
+" The cursor may be anywhere inside the commented block.
+"
+" The block is determined by contiguous lines using the same
+" comment marker.
+" ============================================================
+
+function! FindLineCommentedBlock(marker) abort
+  let current = line('.')
+  let current_text = getline(current)
+
+  let pattern = '^\s*' . escape(a:marker, '\') . '\%(\s\|$\)'
+
+  " The current line must actually be commented.
+  if current_text !~# pattern
+    return []
+  endif
+
+  let start = current
+  let finish = current
+
+  " ----------------------------------------------------------
+  " Walk upward through contiguous commented lines.
+  " ----------------------------------------------------------
+
+  let lnum = current - 1
+
+  while lnum >= 1
+    let text = getline(lnum)
+
+    if text =~# pattern
+      let start = lnum
+      let lnum -= 1
+    else
+      break
+    endif
+  endwhile
+
+
+  " ----------------------------------------------------------
+  " Walk downward through contiguous commented lines.
+  " ----------------------------------------------------------
+
+  let lnum = current + 1
+
+  while lnum <= line('$')
+    let text = getline(lnum)
+
+    if text =~# pattern
+      let finish = lnum
+      let lnum += 1
+    else
+      break
+    endif
+  endwhile
+
+  return [start, finish]
+endfunction
+
+
+" ============================================================
+" FIND C-STYLE COMMENTED BLOCK
+"
+" Used for:
+"
+"   /*
+"   ...
+"   */
+"
+" The cursor may be anywhere between the opening and closing
+" markers.
+"
+" This detector deliberately searches for comment markers
+" rather than trying to rediscover the programming-language
+" block.
+" ============================================================
+
+function! FindCStyleCommentedBlock() abort
+  let current = line('.')
+
+  let start = 0
+  let finish = 0
+
+  " ----------------------------------------------------------
+  " Search upward for the nearest opening /*
+  " ----------------------------------------------------------
+
+  for lnum in reverse(range(1, current))
+    if getline(lnum) =~# '^\s*/\*'
+      let start = lnum
+      break
+    endif
+
+    " An opening marker may be on the current line.
+    if lnum == current
+      if getline(lnum) =~# '/\*'
+        let start = lnum
+        break
+      endif
+    endif
+  endfor
+
+  " Check current line explicitly.
+  if start == 0 && getline(current) =~# '/\*'
+    let start = current
+  endif
+
+  if start == 0
+    return []
+  endif
+
+
+  " ----------------------------------------------------------
+  " Search downward for the closing */
+  " ----------------------------------------------------------
+
+  for lnum in range(start, line('$'))
+    if getline(lnum) =~# '\*/'
+      finish = lnum
+      break
+    endif
+  endfor
+
+  if finish == 0
+    return []
+  endif
+
+  " Cursor must actually be inside the comment range.
+  if current < start || current > finish
+    return []
+  endif
+
+  return [start, finish]
+endfunction
+
+
+" ============================================================
 " FIND PYTHON BLOCK
 "
 " Python blocks are indentation based.
-"
-" The current line is considered part of the block.
-"
-" A block begins at the nearest enclosing line whose
-" indentation is less than the current line's indentation.
-"
-" This intentionally does NOT attempt to determine whether
-" the block is a function, class, if statement, loop, etc.
-"
-" That belongs to function.vim.
 " ============================================================
 
 function! FindPythonBlock() abort
   let current = line('.')
   let current_indent = indent(current)
 
-  " If the current line is top-level, use the current line
-  " as the block.
   if current_indent == 0
     return [current, current]
   endif
 
   let start = current
 
-  " Walk upward until we encounter a less-indented line.
   for lnum in reverse(range(1, current - 1))
     let text = getline(lnum)
 
-    " Blank lines are skipped while looking for the enclosing
-    " indentation level.
     if text =~# '^\s*$'
       continue
     endif
@@ -291,16 +444,12 @@ function! FindPythonBlock() abort
     let start = lnum
   endfor
 
-  " Determine the indentation level represented by the
-  " beginning of the block.
   let block_indent = indent(start)
-
   let finish = current
 
   for lnum in range(current + 1, line('$'))
     let text = getline(lnum)
 
-    " Blank lines remain part of the block.
     if text =~# '^\s*$'
       let finish = lnum
       continue
@@ -319,44 +468,17 @@ endfunction
 
 " ============================================================
 " FIND SHELL BLOCK
-"
-" Finds a brace-delimited block surrounding the cursor.
-"
-" Example:
-"
-"   if condition; then
-"       command
-"       command
-"   fi
-"
-" Shell also uses braces:
-"
-"   {
-"       command
-"       command
-"   }
-"
-" and:
-"
-"   foo() {
-"       command
-"   }
-"
-" For brace-based shell blocks, brace balancing is used.
 " ============================================================
 
 function! FindShellBlock() abort
   let current = line('.')
 
-  " First try to find an enclosing {.
   let start = FindOpeningBrace(current)
 
   if start > 0
     return FindBraceRangeFromStart(start)
   endif
 
-  " If there is no brace block, look for common shell block
-  " constructs.
   let start = FindShellKeywordBlock(current)
 
   if !empty(start)
@@ -369,8 +491,6 @@ endfunction
 
 " ============================================================
 " FIND PERL BLOCK
-"
-" Perl uses braces heavily, so use brace balancing.
 " ============================================================
 
 function! FindPerlBlock() abort
@@ -387,30 +507,6 @@ endfunction
 
 " ============================================================
 " FIND VIM BLOCK
-"
-" Vimscript blocks such as:
-"
-"   if ...
-"       ...
-"   endif
-"
-"   for ...
-"       ...
-"   endfor
-"
-"   while ...
-"       ...
-"   endwhile
-"
-"   try
-"       ...
-"   endtry
-"
-"   function ...
-"       ...
-"   endfunction
-"
-" are detected using matching end commands.
 " ============================================================
 
 function! FindVimBlock() abort
@@ -418,7 +514,6 @@ function! FindVimBlock() abort
   let start = 0
   let end_pattern = ''
 
-  " Search upward for the nearest block opener.
   for lnum in reverse(range(1, current))
     let text = getline(lnum)
 
@@ -453,7 +548,6 @@ function! FindVimBlock() abort
     endif
   endfor
 
-  " The current line itself may be the block opener.
   if start == 0
     let text = getline(current)
 
@@ -494,9 +588,6 @@ endfunction
 
 " ============================================================
 " FIND BRACE BLOCK
-"
-" Finds the nearest opening brace surrounding the cursor and
-" returns its matching closing brace.
 " ============================================================
 
 function! FindBraceBlock() abort
@@ -513,12 +604,6 @@ endfunction
 
 " ============================================================
 " FIND OPENING BRACE
-"
-" Walk upward from the current line while maintaining brace
-" depth.
-"
-" Returns the line containing the opening brace for the block
-" surrounding the cursor.
 " ============================================================
 
 function! FindOpeningBrace(current) abort
@@ -526,7 +611,6 @@ function! FindOpeningBrace(current) abort
 
   for lnum in reverse(range(1, a:current))
     let text = getline(lnum)
-
     let clean = BlockStripStrings(text)
 
     let opens = strlen(substitute(clean, '[^{]', '', 'g'))
@@ -540,8 +624,6 @@ function! FindOpeningBrace(current) abort
     endif
   endfor
 
-  " Check whether the current line itself contains an opening
-  " brace before the cursor position.
   let text = getline(a:current)
   let clean = BlockStripStrings(text)
 
@@ -555,8 +637,6 @@ endfunction
 
 " ============================================================
 " FIND BRACE RANGE FROM START
-"
-" Counts nested braces until the matching closing brace.
 " ============================================================
 
 function! FindBraceRangeFromStart(start) abort
@@ -597,16 +677,6 @@ endfunction
 
 " ============================================================
 " FIND SHELL KEYWORD BLOCK
-"
-" Supports common shell constructs:
-"
-"   if ... fi
-"   for ... done
-"   while ... done
-"   case ... esac
-"
-" The implementation is intentionally separate from function
-" detection.
 " ============================================================
 
 function! FindShellKeywordBlock(current) abort
@@ -687,12 +757,6 @@ endfunction
 
 " ============================================================
 " STRIP SIMPLE STRINGS
-"
-" Removes simple quoted strings before counting braces.
-"
-" This is deliberately lightweight. It is intended to prevent
-" the common case of braces appearing inside quoted strings
-" from confusing block detection.
 " ============================================================
 
 function! BlockStripStrings(text) abort
@@ -707,9 +771,6 @@ endfunction
 
 " ============================================================
 " COMMENT LINE BLOCK
-"
-" Used by Cb for languages whose block comments are actually
-" line comments.
 " ============================================================
 
 function! BlockCommentLines(start, finish, marker) abort
@@ -768,8 +829,6 @@ endfunction
 "   */
 "
 " at the end of the final line.
-"
-" Existing indentation is preserved.
 " ============================================================
 
 function! BlockCommentCStyle(start, finish) abort
@@ -791,7 +850,6 @@ function! BlockCommentCStyle(start, finish) abort
 
   let last = getline(a:finish)
 
-  " Re-read the final line after modifying the first line.
   let last_indent = matchstr(last, '^\s*')
   let last_body = strpart(last, strlen(last_indent))
 
@@ -804,8 +862,6 @@ endfunction
 
 " ============================================================
 " UNCOMMENT C-STYLE BLOCK
-"
-" Reverses BlockCommentCStyle().
 " ============================================================
 
 function! BlockUncommentCStyle(start, finish) abort
