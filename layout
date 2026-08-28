@@ -1,7 +1,0 @@
-~/.vim/
-├── helper.vim
-└── helper/
-    ├── style.vim
-    ├── line.vim
-    ├── block.vim
-    └── function.vim
