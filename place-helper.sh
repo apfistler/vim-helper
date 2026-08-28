@@ -1,90 +1,94 @@
 #!/bin/bash
 #
-# place_helper.sh
+# place-helper.sh
 #
-# Installs helper.vim for Vim and/or Neovim.
+# Installs Vim Editing Helpers for Vim and/or Neovim.
 #
 # The installer:
 #   - Detects installed Vim-family editors.
 #   - Creates the appropriate configuration directories.
-#   - Copies helper.vim into the configuration directory.
-#   - Adds a source directive to the editor's configuration.
+#   - Creates the plugin directory when needed.
+#   - Copies the helper files into the appropriate location.
+#   - Adds source directives to the editor configuration.
 #   - Avoids adding duplicate source directives.
 #
 
 set -e
 
+#
 # Determine the directory containing this installer.
+#
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
-# The helper being installed.
-helper_file="$script_dir/helper.vim"
+#
+# Helper directory.
+#
+helper_dir="$script_dir/helper"
 
-# Make sure helper.vim exists.
-if [ ! -f "$helper_file" ]; then
-  echo "Error: helper.vim was not found." >&2
-  echo "Expected: $helper_file" >&2
+#
+# Make sure the helper directory exists.
+#
+if [ ! -d "$helper_dir" ]; then
+  echo "Error: helper directory was not found." >&2
+  echo "Expected: $helper_dir" >&2
   exit 1
 fi
 
 
 #
-# Install helper for Vim.
+# Install helpers for Vim.
 #
 install_vim() {
   local config_dir="$HOME/.vim"
+  local plugin_dir="$config_dir/plugin"
   local config_file="$HOME/.vimrc"
-  local installed_file="$config_dir/helper.vim"
-  local source_line="source $installed_file"
 
-  echo "Installing helper for Vim..."
+  echo "Installing Vim helpers..."
 
-  # Create Vim's configuration directory.
-  mkdir -p "$config_dir"
+  #
+  # Create Vim configuration/plugin directories.
+  #
+  mkdir -p "$plugin_dir"
 
-  # Install the helper.
-  cp "$helper_file" "$installed_file"
+  #
+  # Install helper files.
+  #
+  cp "$helper_dir"/*.vim "$plugin_dir/"
 
-  # Create .vimrc if it doesn't exist.
-  touch "$config_file"
+  #
+  # Vim automatically loads files from ~/.vim/plugin/,
+  # so no source directive is normally required.
+  #
 
-  # Add the source directive if it isn't already present.
-  if ! grep -Fqx "$source_line" "$config_file"; then
-    printf '\n%s\n' "$source_line" >> "$config_file"
-  fi
-
-  echo "  Installed: $installed_file"
-  echo "  Configured: $config_file"
+  echo "  Installed to: $plugin_dir"
 }
 
 
 #
-# Install helper for Neovim.
+# Install helpers for Neovim.
 #
 install_neovim() {
   local config_dir="$HOME/.config/nvim"
-  local config_file="$config_dir/init.vim"
-  local installed_file="$config_dir/helper.vim"
-  local source_line="source $installed_file"
+  local plugin_dir="$config_dir/plugin"
 
-  echo "Installing helper for Neovim..."
+  echo "Installing Neovim helpers..."
 
-  # Create Neovim's configuration directory.
-  mkdir -p "$config_dir"
+  #
+  # Create Neovim configuration/plugin directories.
+  #
+  mkdir -p "$plugin_dir"
 
-  # Install the helper.
-  cp "$helper_file" "$installed_file"
+  #
+  # Install helper files.
+  #
+  cp "$helper_dir"/*.vim "$plugin_dir/"
 
-  # Create init.vim if it doesn't exist.
-  touch "$config_file"
+  #
+  # Neovim automatically loads files from the plugin
+  # directory, so no source directive is normally required.
+  #
 
-  # Add the source directive if it isn't already present.
-  if ! grep -Fqx "$source_line" "$config_file"; then
-    printf '\n%s\n' "$source_line" >> "$config_file"
-  fi
-
-  echo "  Installed: $installed_file"
-  echo "  Configured: $config_file"
+  echo "  Installed to: $plugin_dir"
 }
 
 
