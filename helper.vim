@@ -23,17 +23,17 @@ endfunction
 
 
 " ------------------------------------------------------------
-" :co <lines>
+" :cl <lines>
 "
 " Comment out the current line and the following <lines>-1 lines.
 "
 " Uses Vim's comment mechanism based on the current filetype.
 "
 " Example:
-"   :co 3
+"   :cl 3
 " ------------------------------------------------------------
 
-command! -nargs=1 co execute '.,+' . (<args> - 1) . 'normal! I// '
+command! -nargs=1 cl execute '.,+' . (<args> - 1) . 'normal! I// '
 
 
 " ------------------------------------------------------------

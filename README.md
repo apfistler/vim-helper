@@ -23,7 +23,7 @@ The helper provides three commands:
 | Command | Purpose                                 |
 | ------- | --------------------------------------- |
 | `:iss`  | Insert spaces at the beginning of lines |
-| `:co`   | Comment out lines                       |
+| `:cl`   | Comment out lines                       |
 | `:uc`   | Uncomment lines                         |
 
 All commands operate starting at the **current line**.
@@ -77,7 +77,7 @@ Inserts four spaces at the beginning of the current line only.
 # `:co` — Comment Out
 
 ```text
-:co <number_of_lines>
+:cl<number_of_lines>
 ```
 
 Comments out the current line and the following lines.
@@ -93,7 +93,7 @@ as the comment prefix.
 ### Example
 
 ```vim
-:co 3
+:cl3
 ```
 
 Before:
@@ -119,7 +119,7 @@ The argument specifies the **total number of lines affected**.
 ### One line
 
 ```vim
-:co 1
+:cl1
 ```
 
 Comments out only the current line.
@@ -191,7 +191,7 @@ This inserts two spaces on the current line and the next four lines.
 ## Comment a block
 
 ```vim
-:co 5
+:cl5
 ```
 
 ## Uncomment a block
@@ -223,7 +223,7 @@ current line
 Likewise:
 
 ```vim
-:co 10
+:cl10
 ```
 
 means the current line plus the next nine lines.
@@ -250,10 +250,10 @@ endfunction
 
 
 " ------------------------------------------------------------
-" :co <lines>
+" :cl<lines>
 " ------------------------------------------------------------
 
-command! -nargs=1 co execute '.,+' . (<args> - 1) . 'normal! I// '
+command! -nargs=1 clexecute '.,+' . (<args> - 1) . 'normal! I// '
 
 
 " ------------------------------------------------------------
