@@ -1,24 +1,12 @@
 # Vim Editing Helpers
 
-Small custom Vim commands for quickly indenting, commenting, and uncommenting consecutive lines.
+Small custom Vim commands for quickly inserting indentation, commenting, and uncommenting consecutive lines.
 
-## Installation
+The helpers are designed for simple, repetitive editing tasks where using Vim's more elaborate range and substitution syntax would be unnecessary overhead.
 
-Place the helper file here:
+## Features
 
-```text
-~/.vim/plugin/helpers.vim
-```
-
-Vim automatically loads files from the `~/.vim/plugin/` directory when Vim starts.
-
-After creating or modifying the file, restart Vim.
-
----
-
-# Commands
-
-The helper provides three commands:
+The plugin provides three commands:
 
 | Command | Purpose                                 |
 | ------- | --------------------------------------- |
@@ -26,11 +14,42 @@ The helper provides three commands:
 | `:cl`   | Comment out lines                       |
 | `:uc`   | Uncomment lines                         |
 
-All commands operate starting at the **current line**.
+The commands operate starting at the **current line** and accept a number of lines to process.
 
 ---
 
-# `:iss` — Insert Spaces
+# Installation
+
+The helper can be installed using the included installer:
+
+```bash
+./place-helper.sh
+```
+
+The installer:
+
+* Checks that Vim or a compatible Vim implementation is installed.
+* Detects supported Vim implementations.
+* Creates the user's Vim plugin directory if necessary.
+* Installs the helper as:
+
+```text
+~/.vim/helper.vim
+```
+
+After installation, restart Vim.
+
+The helper can also be loaded manually:
+
+```vim
+source ~/.vim/helper.vim
+```
+
+---
+
+# Commands
+
+## `:iss` — Insert Spaces
 
 ```text
 :iss <number_of_spaces> <number_of_lines>
@@ -70,30 +89,24 @@ The second argument specifies the **total number of lines affected**, including 
 :iss 4 1
 ```
 
-Inserts four spaces at the beginning of the current line only.
+Only the current line is modified.
 
 ---
 
-# `:co` — Comment Out
+# `:cl` — Comment Out
 
 ```text
-:cl<number_of_lines>
+:cl <number_of_lines>
 ```
 
 Comments out the current line and the following lines.
 
-The current implementation uses:
-
-```text
-// 
-```
-
-as the comment prefix.
+The helper uses `// ` as the comment prefix.
 
 ### Example
 
 ```vim
-:cl3
+:cl 3
 ```
 
 Before:
@@ -119,7 +132,7 @@ The argument specifies the **total number of lines affected**.
 ### One line
 
 ```vim
-:cl1
+:cl 1
 ```
 
 Comments out only the current line.
@@ -158,7 +171,7 @@ third line
 fourth line
 ```
 
-The command preserves existing indentation.
+Existing indentation is preserved.
 
 For example:
 
@@ -174,37 +187,9 @@ becomes:
 
 ---
 
-# Typical Workflow
+# Line Counting
 
-These commands are particularly useful when making quick changes to blocks of code.
-
-## Indent a block
-
-Place the cursor on the first line:
-
-```vim
-:iss 2 5
-```
-
-This inserts two spaces on the current line and the next four lines.
-
-## Comment a block
-
-```vim
-:cl5
-```
-
-## Uncomment a block
-
-```vim
-:uc 5
-```
-
----
-
-# Important: Current Line + Following Lines
-
-The line count represents the **total number of lines**, not the number of lines after the current line.
+All three commands interpret the line count as the **total number of lines affected**.
 
 For example:
 
@@ -223,45 +208,159 @@ current line
 Likewise:
 
 ```vim
-:cl10
+:cl 10
 ```
 
-means the current line plus the next nine lines.
+means:
+
+```text
+current line
++ 9 following lines
+= 10 lines total
+```
+
+This makes the commands easy to use while moving through a file: put the cursor on the first line of the block and specify how many lines should be affected.
+
+---
+
+# Typical Workflow
+
+## Indent a block
+
+Place the cursor on the first line and run:
+
+```vim
+:iss 2 5
+```
+
+This inserts two spaces on five consecutive lines.
+
+## Comment a block
+
+```vim
+:cl 5
+```
+
+This comments the current line and the next four lines.
+
+## Uncomment a block
+
+```vim
+:uc 5
+```
+
+This removes the `//` comment prefix from five consecutive lines.
+
+---
+
+# Why the Commands Use Uppercase Internally
+
+Vim has a restriction on user-defined command names: custom `:command` definitions must begin with an uppercase letter.
+
+Therefore the helper internally defines commands using uppercase names:
+
+```text
+Iss
+Cl
+Uc
+```
+
+The plugin then provides lowercase command abbreviations so the convenient commands can still be used:
+
+```text
+:iss
+:cl
+:uc
+```
+
+This allows the short, natural lowercase interface without violating Vim's user-command naming rules.
 
 ---
 
 # Helper Source
 
-The current helper is:
+The installed helper is:
+
+```text
+~/.vim/helper.vim
+```
+
+The basic implementation is:
 
 ```vim
-" ~/.vim/plugin/helpers.vim
+" ~/.vim/helper.vim
+"
+" Small editing helpers
+
 
 " ------------------------------------------------------------
 " :iss <spaces> <lines>
+"
+" Insert <spaces> spaces at the beginning of the current line
+" and the following <lines>-1 lines.
 " ------------------------------------------------------------
 
-command! -nargs=+ iss call InsertSpaces(<f-args>)
+command! -nargs=+ Iss call InsertSpaces(<f-args>)
 
 function! InsertSpaces(spaces, lines)
   let indent = repeat(' ', a:spaces)
   execute '.,+' . (a:lines - 1) . 's/^/' . escape(indent, '\') . '/'
 endfunction
 
+command! -nargs=+ iss Iss
+
 
 " ------------------------------------------------------------
-" :cl<lines>
+" :cl <lines>
+"
+" Comment out the current line and the following <lines>-1
+" lines using //.
 " ------------------------------------------------------------
 
-command! -nargs=1 clexecute '.,+' . (<args> - 1) . 'normal! I// '
+command! -nargs=1 Cl execute '.,+' . (<args> - 1) . 'normal! I// '
+
+command! -nargs=1 cl Cl
 
 
 " ------------------------------------------------------------
 " :uc <lines>
+"
+" Uncomment the current line and the following <lines>-1
+" lines by removing a leading // comment.
 " ------------------------------------------------------------
 
-command! -nargs=1 uc execute '.,+' . (<args> - 1) . 's/^\(\s*\)\/\/\s\?/\1/'
+command! -nargs=1 Uc execute '.,+' . (<args> - 1) . 's/^\(\s*\)\/\/\s\?/\1/'
+
+command! -nargs=1 uc Uc
 ```
+
+---
+
+# File Location
+
+The repository contains the helper and installer:
+
+```text
+vim-helper/
+├── helper.vim
+├── place-helper.sh
+├── README.md
+└── LICENSE
+```
+
+The installer places the helper at:
+
+```text
+~/.vim/helper.vim
+```
+
+---
+
+# Compatibility
+
+The helper is intended for Vim-compatible editors that support Vimscript user commands.
+
+The installer checks for available Vim implementations before installing the helper.
 
 ---
 
@@ -270,21 +369,20 @@ command! -nargs=1 uc execute '.,+' . (<args> - 1) . 's/^\(\s*\)\/\/\s\?/\1/'
 Possible future additions include:
 
 * Filetype-aware comment characters
-* `:co` with no argument to comment one line
-* `:uc` with no argument to uncomment one line
+* `:iss` support for Vim's existing indentation settings
 * Support for `#` comments in Bash, Python, and YAML
 * Support for HTML comments
 * Support for CSS comments
 * Support for block comments
-* Optional indentation using Vim's existing `shiftwidth`
-* Support for visual selections
+* Visual-selection support
+* Additional small editing helpers
 
-The goal is to keep these commands small and fast while eliminating repetitive editing operations.
+The goal is to keep the commands **small, predictable, and fast** while eliminating repetitive editing operations.
 
 ---
 
-
 # License
+
 Vim Editing Helpers is licensed under the Apache License, Version 2.0.
 
 Copyright 2026 Adam Fistler
@@ -292,3 +390,4 @@ Copyright 2026 Adam Fistler
 [adam@adamfistler.com](mailto:adam@adamfistler.com)
 
 [www.adamfistler.com](https://www.adamfistler.com)
+

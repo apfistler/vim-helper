@@ -1,20 +1,20 @@
-" ~/.vim/plugin/helpers.vim
+" ~/.vim/helper.vim
 "
 " Small editing helpers
 
 " ------------------------------------------------------------
-" :iss <spaces> <lines>
+" :Iss <spaces> <lines>
 "
 " Insert <spaces> spaces at the beginning of the current line
 " and the following <lines>-1 lines.
 "
 " Example:
-"   :iss 4 3
+"   :Iss 4 3
 "
 " Inserts four spaces on three lines.
 " ------------------------------------------------------------
 
-command! -nargs=+ iss call InsertSpaces(<f-args>)
+command! -nargs=+ Iss call InsertSpaces(<f-args>)
 
 function! InsertSpaces(spaces, lines)
   let indent = repeat(' ', a:spaces)
@@ -23,28 +23,28 @@ endfunction
 
 
 " ------------------------------------------------------------
-" :cl <lines>
+" :Cl <lines>
 "
 " Comment out the current line and the following <lines>-1 lines.
 "
-" Uses Vim's comment mechanism based on the current filetype.
+" Currently uses // as the comment prefix.
 "
 " Example:
-"   :cl 3
+"   :Cl 3
 " ------------------------------------------------------------
 
-command! -nargs=1 cl execute '.,+' . (<args> - 1) . 'normal! I// '
+command! -nargs=1 Cl execute '.,+' . (<args> - 1) . 'normal! I// '
 
 
 " ------------------------------------------------------------
-" :uc <lines>
+" :Uc <lines>
 "
 " Uncomment the current line and the following <lines>-1 lines.
 "
 " Removes // comments from the beginning of each line.
 "
 " Example:
-"   :uc 3
+"   :Uc 3
 " ------------------------------------------------------------
 
-command! -nargs=1 uc execute '.,+' . (<args> - 1) . 's/^\(\s*\)\/\/\s\?/\1/'
+command! -nargs=1 Uc execute '.,+' . (<args> - 1) . 's/^\(\s*\)\/\/\s\?/\1/'
