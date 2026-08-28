@@ -31,6 +31,13 @@
 " User-defined Vim commands must begin with an uppercase
 " letter.
 "
+" NOTE: HTML is intentionally NOT supported yet. Brace-based
+" detection has no meaningful equivalent for HTML markup, so
+" Cf/Uf will fall through to FindBraceFunction() (or the
+" C-style commented-function detector) and simply report
+" "Unable to determine function..." for html buffers. This is
+" expected until HTML gets its own detector.
+"
 
 
 " ============================================================
@@ -71,7 +78,8 @@ function! FindFunctionRange() abort
     return FindVimFunction()
   endif
 
-  " C-like languages.
+  " C-like languages (now also css/scss/less, and js/ts arrow
+  " functions, via IsFunctionDeclaration()).
   if index([
         \ 'c',
         \ 'cpp',
@@ -219,7 +227,7 @@ function! FindShellFunction() abort
     endif
   endif
 
-  return FindBraceRange(start)
+  return FindFunctionBraceRange(start)
 endfunction
 
 
@@ -252,7 +260,7 @@ function! FindPerlFunction() abort
     return []
   endif
 
-  return FindBraceRange(start)
+  return FindFunctionBraceRange(start)
 endfunction
 
 
@@ -299,6 +307,68 @@ endfunction
 
 
 " ============================================================
+" IS FUNCTION DECLARATION
+"
+" Used by FindBraceFunction() to decide whether a given line
+" opens a "function" for the purposes of Cf.
+"
+" This is filetype-aware so that:
+"
+"   - JavaScript/TypeScript arrow functions and function
+"     expressions assigned to a variable are recognized, e.g.
+"
+"       const foo = () => {
+"       let foo = async (x) => {
+"       foo = function(x) {
+"
+"   - CSS/SCSS/LESS rule blocks are recognized even though
+"     they have no parentheses at all, e.g.
+"
+"       .foo {
+"       #bar, .baz {
+"       &:hover {
+"
+"     (Selector-less brace-openers like @media (...) { already
+"     matched the generic pattern below by coincidence, since
+"     "media" is \w\+ followed by "(...)"; plain selectors did
+"     not, which is the bug being fixed here.)
+" ============================================================
+
+function! IsFunctionDeclaration(text, ft) abort
+  " Generic function/method declarations: C, Java, Go, Rust,
+  " PHP, Kotlin, Swift, Scala, and plain JS/TS function
+  " declarations/methods.
+  if a:text =~# '\w\+\s*(.*)\s*{'
+        \ || a:text =~# '^\s*\(function\|func\)\>'
+        \ || a:text =~# '^\s*\(public\|private\|protected\|static\|async\)\+.*('
+    return 1
+  endif
+
+  " JavaScript / TypeScript: arrow functions and function
+  " expressions assigned to a variable. These don't match the
+  " generic pattern above because of the "= " between the name
+  " and the parameter list.
+  if index(['javascript', 'typescript'], a:ft) >= 0
+    if a:text =~# '^\s*\(const\|let\|var\)\?\s*[A-Za-z_$][A-Za-z0-9_$.]*\s*=\s*\(async\s*\)\?(.*)\s*=>\s*{\?\s*$'
+          \ || a:text =~# '^\s*\(const\|let\|var\)\?\s*[A-Za-z_$][A-Za-z0-9_$.]*\s*=\s*\(async\s*\)\?function\>'
+      return 1
+    endif
+  endif
+
+  " CSS / SCSS / LESS: any selector or at-rule opening a rule
+  " block. There are no parentheses required, so this is a
+  " simple "line ends with an opening brace" check.
+  if index(['css', 'scss', 'less'], a:ft) >= 0
+    if a:text =~# '{\s*$'
+      return 1
+    endif
+  endif
+
+  return 0
+endfunction
+
+
+" ============================================================
 " BRACE-BASED FUNCTION DETECTION
 "
 " Used for C, C++, Java, JavaScript, CSS, Go, Rust, etc.
@@ -309,15 +379,14 @@ endfunction
 function! FindBraceFunction() abort
   let current = line('.')
   let start = 0
+  let ft = &filetype
 
   " Search upward for a line that looks like a function
   " declaration.
   for lnum in reverse(range(1, current))
     let text = getline(lnum)
 
-    if text =~# '\w\+\s*(.*)\s*{'
-          \ || text =~# '^\s*\(function\|func\)\>'
-          \ || text =~# '^\s*\(public\|private\|protected\|static\|async\)\+.*('
+    if IsFunctionDeclaration(text, ft)
       let start = lnum
       break
     endif
@@ -326,16 +395,14 @@ function! FindBraceFunction() abort
   if start == 0
     let text = getline(current)
 
-    if text =~# '\w\+\s*(.*)\s*{'
-          \ || text =~# '^\s*\(function\|func\)\>'
-          \ || text =~# '^\s*\(public\|private\|protected\|static\|async\)\+.*('
+    if IsFunctionDeclaration(text, ft)
       let start = current
     else
       return []
     endif
   endif
 
-  return FindBraceRange(start)
+  return FindFunctionBraceRange(start)
 endfunction
 
 
@@ -349,7 +416,7 @@ endfunction
 " than merely the declaration line.
 " ============================================================
 
-function! FindBraceRange(start) abort
+function! FindFunctionBraceRange(start) abort
   let depth = 0
   let found_open = 0
   let finish = a:start
@@ -509,7 +576,8 @@ function! FindCommentedFunctionRange() abort
 
 
   " ----------------------------------------------------------
-  " C-style languages
+  " C-style languages (includes css/scss/less and js/ts, since
+  " Cf comments them with /* */ via GetCommentStyle()).
   " ----------------------------------------------------------
 
   if index([
@@ -804,10 +872,14 @@ endfunction
 " ============================================================
 " FIND COMMENTED C-STYLE FUNCTION
 "
-" Cf for C-style languages uses /* ... */ through the shared
-" line-commenting infrastructure.
+" Cf for C-style languages (including css/scss/less and
+" js/ts) uses /* ... */ through the shared block-commenting
+" infrastructure.
 "
 " Therefore detect the surrounding comment markers directly.
+" This does not depend on declaration syntax at all, so it
+" already works correctly for CSS rules and JS arrow
+" functions without any changes.
 " ============================================================
 
 function! FindCommentedCStyleFunction() abort
