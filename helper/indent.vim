@@ -1,194 +1,183 @@
-" ~/.vim/helper/indent.vim
-"
-" Vim Editing Helpers - Structural Indentation
-"
+" ============================================================
+" INDENT HELPER (indent.vim)
 " Commands:
-"
-"   :Sb [spaces]    Reindent the block containing the cursor.
-"   :Sf [spaces]    Reindent the function containing the cursor.
-"
-" If spaces are supplied, the requested number of spaces is
-" used as the indentation unit.
-"
-" If no spaces are supplied, Vim's existing indentation
-" settings are used.
-"
-" Debugging:
-"
-"   :IndentDebugOn
-"   :IndentDebugOff
-"
-" Debugging is ON by default.
-"
-" This file intentionally does NOT depend on function.vim
-" or block.vim.
-
-
-" ============================================================
-" DEBUG
+"   :Sb [spaces] - Reindent current block
+"   :Sf [spaces] - Reindent current function
+"   :Sd [spaces] - Reindent entire document
 " ============================================================
 
-let g:indent_helper_debug = 1
+" Debug flag: set g:indent_helper_debug = 1 in .vimrc to enable logging
+let g:indent_helper_debug = get(g:, 'indent_helper_debug', 0)
 
-command! IndentDebugOn let g:indent_helper_debug = 1
-command! IndentDebugOff let g:indent_helper_debug = 0
-
-
-function! IndentDebug(message) abort
-  if get(g:, 'indent_helper_debug', 0)
-    echomsg a:message
-  endif
-endfunction
-
-
-" ============================================================
-" COMMANDS
-" ============================================================
+" ------------------------------------------------------------
+" COMMAND DEFINITIONS
+" ------------------------------------------------------------
 
 command! -nargs=? Sb call ShiftBlock(<q-args>)
 command! -nargs=? Sf call ShiftFunction(<q-args>)
+command! -nargs=? Sd call ShiftDocument(<q-args>)
 
+" ------------------------------------------------------------
+" CORE REINDENT ENGINE
+" ------------------------------------------------------------
 
-" ============================================================
-" SHIFT BLOCK
-" ============================================================
+function! ReindentRange(start, finish, requested, operation) abort
+  let cursor_line = line('.')
+  let cursor_col = col('.')
 
-function! ShiftBlock(argument) abort
-  let explicit = a:argument !=# ''
+  let old_shiftwidth = &shiftwidth
+  let old_softtabstop = &softtabstop
+  let old_tabstop = &tabstop
+  let old_expandtab = &expandtab
+  let old_autoindent = &autoindent
+  let old_smartindent = &smartindent
+  let old_cindent = &cindent
+  let old_indentexpr = &indentexpr
 
-  if explicit
-    if a:argument !~# '^\d\+$'
-      echoerr 'Indentation must be a non-negative number of spaces.'
-      return
-    endif
+  if g:indent_helper_debug
+    echomsg '--- ' . a:operation . ' DEBUG START ---'
+    echomsg 'Cursor: line ' . cursor_line . ', col ' . cursor_col
+    echomsg 'Filetype: ' . &filetype
+    echomsg 'Target range: ' . a:start . ' - ' . a:finish
+    echomsg 'Requested spaces: ' . a:requested
+    echomsg '--- RANGE BEFORE ---'
+    for lnum in range(a:start, a:finish)
+      echomsg printf('%4d: indent=%d text=%s', lnum, indent(lnum), string(getline(lnum)))
+    endfor
+    echomsg 'Original shiftwidth: ' . old_shiftwidth
+    echomsg 'Original softtabstop: ' . old_softtabstop
+    echomsg 'Original tabstop: ' . old_tabstop
+    echomsg 'Original expandtab: ' . old_expandtab
+  endif
 
-    let spaces = str2nr(a:argument)
+  " Determine indentation spacing (explicit arg, else default to 4 spaces)
+  if a:requested >= 0
+    let indent_unit = a:requested
   else
-    let spaces = -1
+    let indent_unit = 4
   endif
 
-  let range = FindIndentBlockRange()
-
-  if empty(range)
-    echoerr 'Unable to determine block at current cursor position.'
-    return
+  if g:indent_helper_debug
+    echomsg 'Applied indentation unit: ' . indent_unit
   endif
 
-  call ReindentRange(range[0], range[1], spaces, 'Sb')
+  " Temporarily override indentation settings to enforce space-based indent
+  let &shiftwidth = indent_unit
+  let &softtabstop = indent_unit
+  let &tabstop = indent_unit
+  let &expandtab = 1
+
+  " Reindent strategy: use Python AST/syntax loop for Python files, Vim '=' for others
+  if &filetype ==# 'python' && has('python3')
+    python3 << EOF
+import vim
+
+start_line = int(vim.eval('a:start'))
+finish_line = int(vim.eval('a:finish'))
+indent_size = int(vim.eval('indent_unit'))
+
+buf = vim.current.buffer
+lines = buf[start_line-1:finish_line]
+
+reindented = []
+indent_stack = [0]
+
+for line in lines:
+    stripped = line.strip()
+    if not stripped:
+        reindented.append('')
+        continue
+
+    # Deduce nesting changes based on control structure keywords
+    if stripped.startswith(('elif ', 'else:', 'except', 'finally:')):
+        level = max(0, len(indent_stack) - 2) if len(indent_stack) > 1 else 0
+        indent_str = ' ' * (level * indent_size)
+    else:
+        indent_str = ' ' * (indent_stack[-1] * indent_size)
+
+    reindented.append(indent_str + stripped)
+
+    # If the line opens a block (ends with ':'), increase indent level
+    if stripped.endswith(':'):
+        indent_stack.append(indent_stack[-1] + 1)
+
+buf[start_line-1:finish_line] = reindented
+EOF
+  else
+    " Perform reindentation using visual line selection + Vim's '=' operator
+    call cursor(a:start, 1)
+    normal! V
+    if a:finish > a:start
+      execute 'normal! ' . (a:finish - a:start) . 'j'
+    endif
+    normal! =
+  endif
+
+  " Restore original cursor position and settings
+  call cursor(cursor_line, cursor_col)
+
+  let &shiftwidth = old_shiftwidth
+  let &softtabstop = old_softtabstop
+  let &tabstop = old_tabstop
+  let &expandtab = old_expandtab
+  let &autoindent = old_autoindent
+  let &smartindent = old_smartindent
+  let &cindent = old_cindent
+  let &indentexpr = old_indentexpr
+
+  if g:indent_helper_debug
+    echomsg '--- RANGE AFTER ---'
+    for lnum in range(a:start, a:finish)
+      echomsg printf('%4d: indent=%d text=%s', lnum, indent(lnum), string(getline(lnum)))
+    endfor
+    echomsg 'Vim state restored.'
+    echomsg '--- ' . a:operation . ' DEBUG END ---'
+  endif
 endfunction
 
+" ------------------------------------------------------------
+" HELPER FUNCTIONS FOR SCOPE DETECTION
+" ------------------------------------------------------------
 
-" ============================================================
-" SHIFT FUNCTION
-" ============================================================
-
-function! ShiftFunction(argument) abort
-  let explicit = a:argument !=# ''
-
-  if explicit
-    if a:argument !~# '^\d\+$'
-      echoerr 'Indentation must be a non-negative number of spaces.'
-      return
-    endif
-
-    let spaces = str2nr(a:argument)
-  else
-    let spaces = -1
+function! ParseSpaceArg(arg) abort
+  if a:arg ==# ''
+    return -1
   endif
-
-  let range = FindIndentFunctionRange()
-
-  if empty(range)
-    echoerr 'Unable to determine function at current cursor position.'
-    return
+  if a:arg !~# '^\d\+$'
+    echoerr 'Indentation must be a non-negative number of spaces.'
+    return -2
   endif
-
-  call ReindentRange(range[0], range[1], spaces, 'Sf')
+  return str2nr(a:arg)
 endfunction
 
-
-" ============================================================
-" FUNCTION RANGE
-" ============================================================
-
-function! FindIndentFunctionRange() abort
-  let ft = &filetype
-
-  if get(g:, 'indent_helper_debug', 0)
-    echomsg '--- Sf DEBUG ---'
-    echomsg 'Cursor: ' . line('.')
-    echomsg 'Filetype: ' . ft
+function! FindBraceRange() abort
+  let start = search('^{', 'bcnW')
+  if start == 0
+    let start = search('{', 'bcnW')
+  endif
+  if start == 0
+    return []
   endif
 
-  if ft ==# 'python'
-    let range = FindIndentPythonFunction()
+  let saved_pos = getpos('.')
+  call cursor(start, 1)
+  normal! %
+  let finish = line('.')
+  call setpos('.', saved_pos)
 
-  elseif index([
-        \ 'sh',
-        \ 'bash',
-        \ 'zsh',
-        \ 'ksh',
-        \ 'fish'
-        \ ], ft) >= 0
-    let range = FindIndentShellFunction()
-
-  elseif ft ==# 'perl'
-    let range = FindIndentPerlFunction()
-
-  elseif ft ==# 'vim'
-    let range = FindIndentVimFunction()
-
-  elseif index([
-        \ 'c',
-        \ 'cpp',
-        \ 'cxx',
-        \ 'cc',
-        \ 'objc',
-        \ 'java',
-        \ 'javascript',
-        \ 'typescript',
-        \ 'css',
-        \ 'scss',
-        \ 'less',
-        \ 'php',
-        \ 'go',
-        \ 'rust',
-        \ 'kotlin',
-        \ 'swift',
-        \ 'scala'
-        \ ], ft) >= 0
-    let range = FindIndentBraceFunction()
-
-  else
-    let range = FindIndentBraceFunction()
+  if finish <= start
+    return []
   endif
 
-  if get(g:, 'indent_helper_debug', 0)
-    if empty(range)
-      echomsg 'Function range: EMPTY'
-    else
-      echomsg 'Function range: ' . range[0] . ' - ' . range[1]
-    endif
-  endif
-
-  return range
+  return [start, finish]
 endfunction
-
-
-" ============================================================
-" PYTHON FUNCTION RANGE
-" ============================================================
-
-" ============================================================
-" PYTHON FUNCTION RANGE (FIXED FOR BROKEN/UNINDENTED CODE)
-" ============================================================
 
 function! FindIndentPythonFunction() abort
   let current = line('.')
   let start = 0
   let function_indent = -1
 
-  " 1. Find the nearest def at or above current line
+  " 1. Search backwards for nearest def statement
   for lnum in reverse(range(1, current))
     let text = getline(lnum)
     if text =~# '^\s*\(async\s\+\)\?def\s\+\w\+'
@@ -202,21 +191,18 @@ function! FindIndentPythonFunction() abort
     return []
   endif
 
-  " 2. Walk downward to find where the function ends
+  " 2. Walk forward to find end boundary
   let total_lines = line('$')
-  let finish = total_lines
   let last_content_line = start
 
   for lnum in range(start + 1, total_lines)
     let text = getline(lnum)
 
-    " Skip completely blank lines
     if text =~# '^\s*$'
       continue
     endif
 
-    " Stop IF we encounter a new top-level def/class at the same or outer indent level
-    " OR a new unindented top-level statement (indent=0) that isn't a comment
+    " Stop if we reach a new top-level construct after cursor position
     if lnum > current
       if text =~# '^\s*\(async\s\+\)\?def\s\+\w\+' && indent(lnum) <= function_indent
         break
@@ -232,487 +218,123 @@ function! FindIndentPythonFunction() abort
     let last_content_line = lnum
   endfor
 
-  " Trim trailing blank lines at the bottom of the function
   let finish = last_content_line
-
   if finish < current
     return []
   endif
 
   return [start, finish]
 endfunction
-
-" ============================================================
-" SHELL FUNCTION
-" ============================================================
-
-function! FindIndentShellFunction() abort
-  let current = line('.')
-  let start = 0
-
-  for lnum in reverse(range(1, current))
-    let text = getline(lnum)
-    if text =~# '^\s*function\s\+\w\+'
-          \ || text =~# '^\s*\w\+\s*()\s*{'
-      let start = lnum
-      break
-    endif
-  endfor
-
-  if start == 0
-    return []
-  endif
-
-  return FindIndentBraceRange(start)
-endfunction
-
-
-" ============================================================
-" PERL FUNCTION
-" ============================================================
-
-function! FindIndentPerlFunction() abort
-  let current = line('.')
-  let start = 0
-
-  for lnum in reverse(range(1, current))
-    if getline(lnum) =~# '^\s*sub\s\+\w\+'
-      let start = lnum
-      break
-    endif
-  endfor
-
-  if start == 0
-    return []
-  endif
-
-  return FindIndentBraceRange(start)
-endfunction
-
-
-" ============================================================
-" VIM FUNCTION
-" ============================================================
-
-function! FindIndentVimFunction() abort
-  let current = line('.')
-  let start = 0
-
-  for lnum in reverse(range(1, current))
-    if getline(lnum) =~# '^\s*fu\%[nction]!\?\>'
-      let start = lnum
-      break
-    endif
-  endfor
-
-  if start == 0
-    return []
-  endif
-
-  let finish = start
-  let depth = 0
-
-  " Track nested function definitions to find matching endfunction
-  for lnum in range(start, line('$'))
-    let text = getline(lnum)
-
-    if text =~# '^\s*fu\%[nction]!\?\>'
-      let depth += 1
-    elseif text =~# '^\s*endf\%[unction]\>'
-      let depth -= 1
-      if depth == 0
-        let finish = lnum
-        break
-      endif
-    endif
-  endfor
-
-  if finish < current
-    return []
-  endif
-
-  return [start, finish]
-endfunction
-
-
-" ============================================================
-" BRACE FUNCTION
-" ============================================================
-
-function! FindIndentBraceFunction() abort
-  let current = line('.')
-  let start = 0
-
-  for lnum in reverse(range(1, current))
-    let text = getline(lnum)
-
-    if text =~# '\w\+\s*(.*)\s*{'
-          \ || text =~# '^\s*\(function\|func\)\>'
-          \ || text =~# '^\s*\(public\|private\|protected\|static\|async\)\+.*('
-      let start = lnum
-      break
-    endif
-  endfor
-
-  if start == 0
-    return []
-  endif
-
-  return FindIndentBraceRange(start)
-endfunction
-
-
-" ============================================================
-" BRACE RANGE
-" ============================================================
-
-function! FindIndentBraceRange(start) abort
-  let depth = 0
-  let found_open = 0
-  let finish = a:start
-  let current = line('.')
-
-  for lnum in range(a:start, line('$'))
-    let clean = IndentStripCommentsAndStrings(getline(lnum))
-
-    let opens = strlen(substitute(clean, '[^{]', '', 'g'))
-    let closes = strlen(substitute(clean, '[^}]', '', 'g'))
-
-    let depth += opens
-    let depth -= closes
-
-    if opens > 0
-      let found_open = 1
-    endif
-
-    if found_open
-      let finish = lnum
-    endif
-
-    if found_open && depth <= 0
-      break
-    endif
-  endfor
-
-  if !found_open || finish < current
-    return []
-  endif
-
-  return [a:start, finish]
-endfunction
-
-
-" ============================================================
-" BLOCK RANGE
-" ============================================================
-
-function! FindIndentBlockRange() abort
-  let ft = &filetype
-
-  if ft ==# 'python'
-    return FindIndentPythonBlock()
-  endif
-
-  if index([
-        \ 'sh',
-        \ 'bash',
-        \ 'zsh',
-        \ 'ksh',
-        \ 'fish'
-        \ ], ft) >= 0
-    return FindIndentShellBlock()
-  endif
-
-  if ft ==# 'vim'
-    return FindIndentVimBlock()
-  endif
-
-  return FindIndentBraceBlock()
-endfunction
-
-
-" ============================================================
-" PYTHON BLOCK
-" ============================================================
 
 function! FindIndentPythonBlock() abort
   let current = line('.')
-  let current_indent = indent(current)
+  let cur_indent = indent(current)
+  let total_lines = line('$')
 
-  if current_indent == 0
-    return [current, current]
+  " If on blank line, walk up to find nearest non-blank line
+  if getline(current) =~# '^\s*$'
+    let non_blank = prevnonblank(current)
+    if non_blank == 0
+      return []
+    endif
+    let cur_indent = indent(non_blank)
   endif
 
+  " Find start of block
   let start = current
+  while start > 1
+    let prev_line = start - 1
+    let prev_text = getline(prev_line)
 
-  " Look backward for block header
-  for lnum in reverse(range(1, current - 1))
-    let text = getline(lnum)
-
-    if text =~# '^\s*$' || text =~# '^\s*#'
+    if prev_text =~# '^\s*$'
+      let start = prev_line
       continue
     endif
 
-    if indent(lnum) < current_indent
-      let start = lnum
+    if indent(prev_line) < cur_indent
       break
     endif
 
-    let start = lnum
-  endfor
+    let start = prev_line
+  endwhile
 
-  let base = indent(start)
+  " Find end of block
   let finish = current
+  while finish < total_lines
+    let next_line = finish + 1
+    let next_text = getline(next_line)
 
-  " Look forward for block completion
-  for lnum in range(current + 1, line('$'))
-    let text = getline(lnum)
-
-    if text =~# '^\s*$' || text =~# '^\s*#'
+    if next_text =~# '^\s*$'
+      let finish = next_line
       continue
     endif
 
-    if indent(lnum) <= base
+    if indent(next_line) < cur_indent
       break
     endif
 
-    let finish = lnum
-  endfor
+    let finish = next_line
+  endwhile
 
   return [start, finish]
 endfunction
 
+" ------------------------------------------------------------
+" COMMAND IMPLEMENTATIONS
+" ------------------------------------------------------------
 
-" ============================================================
-" SHELL BLOCK
-" ============================================================
-
-function! FindIndentShellBlock() abort
-  let current = line('.')
-  let start = IndentFindOpeningBrace(current)
-
-  if start > 0
-    return FindIndentBraceRange(start)
+function! ShiftBlock(argument) abort
+  let spaces = ParseSpaceArg(a:argument)
+  if spaces == -2
+    return
   endif
 
-  return []
-endfunction
-
-
-" ============================================================
-" VIM BLOCK
-" ============================================================
-
-function! FindIndentVimBlock() abort
-  let current = line('.')
-  let start = 0
-  let end_pattern = ''
-
-  for lnum in reverse(range(1, current))
-    let text = getline(lnum)
-
-    if text =~# '^\s*if\>'
-      let start = lnum
-      let end_pattern = '^\s*endif\>'
-      break
-    elseif text =~# '^\s*for\>'
-      let start = lnum
-      let end_pattern = '^\s*endfor\>'
-      break
-    elseif text =~# '^\s*while\>'
-      let start = lnum
-      let end_pattern = '^\s*endwhile\>'
-      break
-    endif
-  endfor
-
-  if start == 0
-    return []
-  endif
-
-  let finish = start
-
-  for lnum in range(start + 1, line('$'))
-    if getline(lnum) =~# end_pattern
-      let finish = lnum
-      break
-    endif
-  endfor
-
-  if finish < current
-    return []
-  endif
-
-  return [start, finish]
-endfunction
-
-
-" ============================================================
-" BRACE BLOCK
-" ============================================================
-
-function! FindIndentBraceBlock() abort
-  let current = line('.')
-  let start = IndentFindOpeningBrace(current)
-
-  if start <= 0
-    return []
-  endif
-
-  return FindIndentBraceRange(start)
-endfunction
-
-
-" ============================================================
-" FIND OPENING BRACE
-" ============================================================
-
-function! IndentFindOpeningBrace(current) abort
-  let depth = 0
-
-  for lnum in reverse(range(1, a:current))
-    let clean = IndentStripCommentsAndStrings(getline(lnum))
-
-    let opens = strlen(substitute(clean, '[^{]', '', 'g'))
-    let closes = strlen(substitute(clean, '[^}]', '', 'g'))
-
-    let depth += closes
-    let depth -= opens
-
-    if depth < 0
-      return lnum
-    endif
-  endfor
-
-  let clean = IndentStripCommentsAndStrings(getline(a:current))
-
-  if clean =~# '{'
-    return a:current
-  endif
-
-  return 0
-endfunction
-
-
-" ============================================================
-" STRING & COMMENT CLEANUP
-" ============================================================
-
-function! IndentStripCommentsAndStrings(text) abort
-  let clean = a:text
-
-  " Strip single-line comments
-  if &filetype =~# '^\(c\|cpp\|java\|javascript\|typescript\|go\|rust\|swift\|php\)$'
-    let clean = substitute(clean, '//.*$', '', '')
-  elseif &filetype =~# '^\(python\|sh\|bash\|zsh\|perl\|ruby\)$'
-    let clean = substitute(clean, '#.*$', '', '')
-  elseif &filetype ==# 'vim'
-    let clean = substitute(clean, '^\s*".*$', '', '')
-  endif
-
-  " Strip string literals
-  let clean = substitute(clean, '"\(\\"\|[^"]\)*"', '', 'g')
-  let clean = substitute(clean, "'\(\\'\|[^']\)*'", '', 'g')
-
-  return clean
-endfunction
-
-
-" ============================================================
-" REINDENT RANGE
-" ============================================================
-
-" ============================================================
-" REINDENT RANGE (FIXED FOR DEFAULT 4-SPACE INDENT)
-" ============================================================
-
-function! ReindentRange(start, finish, requested, operation) abort
-  let cursor_line = line('.')
-  let cursor_col = col('.')
-
-  let old_shiftwidth = &shiftwidth
-  let old_softtabstop = &softtabstop
-  let old_tabstop = &tabstop
-  let old_expandtab = &expandtab
-  let old_autoindent = &autoindent
-  let old_smartindent = &smartindent
-  let old_cindent = &cindent
-  let old_indentexpr = &indentexpr
-
-  if get(g:, 'indent_helper_debug', 0)
-    echomsg 'Requested spaces: ' . a:requested
-    echomsg '--- RANGE BEFORE ---'
-
-    for lnum in range(a:start, a:finish)
-      echomsg printf(
-            \ '%4d: indent=%d text=%s',
-            \ lnum,
-            \ indent(lnum),
-            \ string(getline(lnum))
-            \ )
-    endfor
-  endif
-
-  " ----------------------------------------------------------
-  " Determine temporary indentation settings:
-  " - If an explicit argument was passed (a:requested >= 0), use it.
-  " - Otherwise, default to 4 spaces.
-  " ----------------------------------------------------------
-
-  if a:requested >= 0
-    let indent_unit = a:requested
+  let range_coords = []
+  if &filetype ==# 'python'
+    let range_coords = FindIndentPythonBlock()
   else
-    let indent_unit = 4
+    let range_coords = FindBraceRange()
   endif
 
-  if get(g:, 'indent_helper_debug', 0)
-    echomsg 'Applied indentation unit: ' . indent_unit
+  if empty(range_coords)
+    echo 'No enclosing block found.'
+    return
   endif
 
-  " ----------------------------------------------------------
-  " Configure Vim temporarily to enforce spaces over tabs.
-  " ----------------------------------------------------------
+  call ReindentRange(range_coords[0], range_coords[1], spaces, 'Sb')
+endfunction
 
-  let &shiftwidth = indent_unit
-  let &softtabstop = indent_unit
-  let &tabstop = indent_unit
-  let &expandtab = 1
-
-  " Reindent using visual line range and native operator
-  call cursor(a:start, 1)
-  normal! V
-
-  if a:finish > a:start
-    execute 'normal! ' . (a:finish - a:start) . 'j'
+function! ShiftFunction(argument) abort
+  let spaces = ParseSpaceArg(a:argument)
+  if spaces == -2
+    return
   endif
 
-  normal! =
-
-  " Restore cursor position and option state
-  call cursor(cursor_line, cursor_col)
-
-  let &shiftwidth = old_shiftwidth
-  let &softtabstop = old_softtabstop
-  let &tabstop = old_tabstop
-  let &expandtab = old_expandtab
-  let &autoindent = old_autoindent
-  let &smartindent = old_smartindent
-  let &cindent = old_cindent
-  let &indentexpr = old_indentexpr
-
-  if get(g:, 'indent_helper_debug', 0)
-    echomsg '--- RANGE AFTER ---'
-
-    for lnum in range(a:start, a:finish)
-      echomsg printf(
-            \ '%4d: indent=%d text=%s',
-            \ lnum,
-            \ indent(lnum),
-            \ string(getline(lnum))
-            \ )
-    endfor
-
-    echomsg 'Vim state restored.'
-    echomsg '--- ' . a:operation . ' DEBUG END ---'
+  let range_coords = []
+  if &filetype ==# 'python'
+    let range_coords = FindIndentPythonFunction()
+  else
+    let range_coords = FindBraceRange()
   endif
+
+  if empty(range_coords)
+    echo 'No enclosing function found.'
+    return
+  endif
+
+  call ReindentRange(range_coords[0], range_coords[1], spaces, 'Sf')
+endfunction
+
+function! ShiftDocument(argument) abort
+  let spaces = ParseSpaceArg(a:argument)
+  if spaces == -2
+    return
+  endif
+
+  let last_line = line('$')
+  if last_line <= 0
+    return
+  endif
+
+  call ReindentRange(1, last_line, spaces, 'Sd')
 endfunction
