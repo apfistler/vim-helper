@@ -10,9 +10,9 @@ The plugin provides three commands:
 
 | Command | Purpose                                 |
 | ------- | --------------------------------------- |
-| `:iss`  | Insert spaces at the beginning of lines |
-| `:cl`   | Comment out lines                       |
-| `:uc`   | Uncomment lines                         |
+| `:Iss`  | Insert spaces at the beginning of lines |
+| `:Cl`   | Comment out lines                       |
+| `:Uc`   | Uncomment lines                         |
 
 The commands operate starting at the **current line** and accept a number of lines to process.
 
@@ -49,10 +49,10 @@ source ~/.vim/helper.vim
 
 # Commands
 
-## `:iss` — Insert Spaces
+## `:Iss` — Insert Spaces
 
 ```text
-:iss <number_of_spaces> <number_of_lines>
+:Iss <number_of_spaces> <number_of_lines>
 ```
 
 Inserts the specified number of spaces at the beginning of the current line and the following lines.
@@ -60,7 +60,7 @@ Inserts the specified number of spaces at the beginning of the current line and 
 ### Example
 
 ```vim
-:iss 4 3
+:Iss 4 3
 ```
 
 Before:
@@ -86,17 +86,17 @@ The second argument specifies the **total number of lines affected**, including 
 ### One line
 
 ```vim
-:iss 4 1
+:Iss 4 1
 ```
 
 Only the current line is modified.
 
 ---
 
-# `:cl` — Comment Out
+# `:Cl` — Comment Out
 
 ```text
-:cl <number_of_lines>
+:Cl <number_of_lines>
 ```
 
 Comments out the current line and the following lines.
@@ -106,7 +106,7 @@ The helper uses `// ` as the comment prefix.
 ### Example
 
 ```vim
-:cl 3
+:Cl 3
 ```
 
 Before:
@@ -132,17 +132,17 @@ The argument specifies the **total number of lines affected**.
 ### One line
 
 ```vim
-:cl 1
+:Cl 1
 ```
 
 Comments out only the current line.
 
 ---
 
-# `:uc` — Uncomment
+# `:Uc` — Uncomment
 
 ```text
-:uc <number_of_lines>
+:Uc <number_of_lines>
 ```
 
 Removes a `//` comment from the beginning of the current line and the following lines.
@@ -150,7 +150,7 @@ Removes a `//` comment from the beginning of the current line and the following 
 ### Example
 
 ```vim
-:uc 3
+:Uc 3
 ```
 
 Before:
@@ -194,7 +194,7 @@ All three commands interpret the line count as the **total number of lines affec
 For example:
 
 ```vim
-:iss 2 5
+:Iss 2 5
 ```
 
 means:
@@ -208,7 +208,7 @@ current line
 Likewise:
 
 ```vim
-:cl 10
+:Cl 10
 ```
 
 means:
@@ -230,7 +230,7 @@ This makes the commands easy to use while moving through a file: put the cursor 
 Place the cursor on the first line and run:
 
 ```vim
-:iss 2 5
+:Iss 2 5
 ```
 
 This inserts two spaces on five consecutive lines.
@@ -238,7 +238,7 @@ This inserts two spaces on five consecutive lines.
 ## Comment a block
 
 ```vim
-:cl 5
+:Cl 5
 ```
 
 This comments the current line and the next four lines.
@@ -246,7 +246,7 @@ This comments the current line and the next four lines.
 ## Uncomment a block
 
 ```vim
-:uc 5
+:Uc 5
 ```
 
 This removes the `//` comment prefix from five consecutive lines.
@@ -268,9 +268,9 @@ Uc
 The plugin then provides lowercase command abbreviations so the convenient commands can still be used:
 
 ```text
-:iss
-:cl
-:uc
+:Iss
+:Cl
+:Uc
 ```
 
 This allows the short, natural lowercase interface without violating Vim's user-command naming rules.
@@ -294,7 +294,7 @@ The basic implementation is:
 
 
 " ------------------------------------------------------------
-" :iss <spaces> <lines>
+" :Iss <spaces> <lines>
 "
 " Insert <spaces> spaces at the beginning of the current line
 " and the following <lines>-1 lines.
@@ -311,7 +311,7 @@ command! -nargs=+ iss Iss
 
 
 " ------------------------------------------------------------
-" :cl <lines>
+" :Cl <lines>
 "
 " Comment out the current line and the following <lines>-1
 " lines using //.
@@ -323,7 +323,7 @@ command! -nargs=1 cl Cl
 
 
 " ------------------------------------------------------------
-" :uc <lines>
+" :Uc <lines>
 "
 " Uncomment the current line and the following <lines>-1
 " lines by removing a leading // comment.
@@ -369,7 +369,7 @@ The installer checks for available Vim implementations before installing the hel
 Possible future additions include:
 
 * Filetype-aware comment characters
-* `:iss` support for Vim's existing indentation settings
+* `:Iss` support for Vim's existing indentation settings
 * Support for `#` comments in Bash, Python, and YAML
 * Support for HTML comments
 * Support for CSS comments
